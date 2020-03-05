@@ -2,6 +2,10 @@
 
 Rabbitmq install:
 	brew install rabbitmq
+	
+Add rabbitmq path to environment variables:
+	export PATH=$PATH:/usr/local/opt/rabbitmq/sbin
+	
 Start server from terminal:
 	rabbitmq-server
 UI:
