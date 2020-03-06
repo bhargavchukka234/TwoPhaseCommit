@@ -1,20 +1,8 @@
+from communication_utils import sendMessageToCohort
 from recovery import RecoveryThread
-from enum import Enum
+from constants import *
 import pika
-from enum import IntEnum
 import json
-
-COMMIT_ACK_TIMEOUT = 500
-
-
-class State(IntEnum):
-    INITIATED = 0
-    PREPARE = 1
-    PREPARED = 2
-    COMMIT = 3
-    ABORT = 4
-    ACK = 5
-
 
 class Transaction:
 
@@ -85,62 +73,42 @@ class Coordinator:
     def __init__(self):
         """Constructor"""
         self.cohorts = []
-        # self.log_file = log_file
         self.protocol_DB = ProtocolDB()
-        self.recovery_thread = RecoveryThread()
-        self.timeout_transaction_list = dict()
+        self.timeout_transaction_info = dict()
+        self.recovery_thread = RecoveryThread(self.protocol_DB, self.timeout_transaction_info)
 
     def start(self):
         rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
         # create one channel which can create multiple queues
         self.channel = rabbitMQConnection.channel()
+        # start the recovery thread
+        self.recovery_thread.start()
 
     def run(self):
+        # required if coordinator comes up after crash/failure
         if not self.protocol_DB.empty():
             for transaction in self.protocol_DB.transactions:
-                self.timeout_transaction_list[transaction.id, COMMIT_ACK_TIMEOUT]
-                # send commit/abort to all
+                self.timeout_transaction_info[transaction.id, COMMIT_ACK_TIMEOUT]
+                for cohort in transaction.cohorts:
+                    sendMessageToCohort(self.channel, cohort, State.COMMIT)
 
-                cohortQueues = ["queue1", "queue2", "queue3"]
-                # initialize a queue per cohort
-                self.channel.queue_declare(queue=cohortQueues[0], durable=True)
-                # Queue on which the coordinator recieves a response from the cohorts
-                self.channel.queue_declare(queue='coordinatorQueue', durable=True)
-                # send out the first message to each coordinator
-                i = 1
-                sendMessageToCohort(self.channel, i, State.PREPARE)
-                # send out the first set of messages */
-                # while True:
-                # loop through all the queues to send transactions to each site
-                # time.sleep(2)
-                self.channel.basic_consume(queue='coordinatorQueue',
-                                           auto_ack=True,
-                                           on_message_callback=cohortResponse)
-                self.channel.start_consuming()
+        cohortQueues = ["queue1", "queue2", "queue3"]
+        # initialize a queue per cohort
+        self.channel.queue_declare(queue=cohortQueues[0], durable=True)
+        # Queue on which the coordinator recieves a response from the cohorts
+        self.channel.queue_declare(queue='coordinatorQueue', durable=True)
+        # send out the first message to each coordinator
+        i = 1
+        sendMessageToCohort(self.channel, i, State.PREPARE)
+        # send out the first set of messages */
+        # while True:
+        # loop through all the queues to send transactions to each site
+        # time.sleep(2)
+        self.channel.basic_consume(queue='coordinatorQueue',
+                                   auto_ack=True,
+                                   on_message_callback=cohortResponse)
+        self.channel.start_consuming()
 
-
-def sendMessageToCohort(channel, processNumber, state):
-    # TODO: remove the hardcoded value for the queue1 and pass the actual queue name for the function
-    queueName = "queue" + str(processNumber)
-    messageBody = ""
-    if (state == State.PREPARE):
-        count = 0
-        for line in fd_observation:
-            if (count <= 10):
-                if (line.__contains__("INSERT")):
-                    messageBody = messageBody + line + ":"
-                    count += 1
-        message = {"sender": processNumber, "state": int(state), "messageBody": messageBody}
-        jsonMessage = json.dumps(message)
-        channel.basic_publish(exchange='',
-                              routing_key=queueName,
-                              body=jsonMessage)
-    elif (state == State.COMMIT or state == State.ABORT):
-        message = {"sender": processNumber, "state": state, "messageBody": ""}
-        jsonMessage = json.dumps(message)
-        channel.basic_publish(exchange='',
-                              routing_key=queueName,
-                              body=jsonMessage)
 
 def cohortResponse(channel, method, properties, body):
     print(" [x] Received response from cohort %r" % body)
