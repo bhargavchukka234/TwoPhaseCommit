@@ -1,3 +1,4 @@
+from recovery import RecoveryThread
 from enum import Enum
 
 COMMIT_ACK_TIMEOUT = 500
@@ -76,20 +77,19 @@ class Coordinator:
     Coordinator for a 2 Phase Commit
     """
 
-    def __init__(self, unique_id, log_file):
+    def __init__(self):
         """Constructor"""
-        self.unique_id = unique_id
         self.cohorts = []
-        self.log_file = log_file
+        #self.log_file = log_file
         self.protocol_DB = ProtocolDB()
         self.recovery_thread = RecoveryThread()
         self.timeout_transaction_list = dict()
 
     def start(self):
-        self.reconstruct_protocol_DB()
+        pass
+        #self.reconstruct_protocol_DB()
 
     def run(self):
-
         if not self.protocol_DB.empty():
             for transaction in self.protocol_DB.transactions:
                 self.timeout_transaction_list[transaction.id, COMMIT_ACK_TIMEOUT]
