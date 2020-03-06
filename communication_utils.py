@@ -1,10 +1,13 @@
-def sendMessageToCohort(channel, processNumber, state):
+import json
+from constants import State
+
+def sendMessageToCohort(channel, processNumber, state, insert_statements_list):
     # TODO: remove the hardcoded value for the queue1 and pass the actual queue name for the function
     queueName = "queue" + str(processNumber)
     messageBody = ""
     if (state == State.PREPARE):
         count = 0
-        for line in fd_observation:
+        for line in insert_statements_list:
             if (count <= 10):
                 if (line.__contains__("INSERT")):
                     messageBody = messageBody + line + ":"
