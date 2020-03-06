@@ -1,13 +1,13 @@
 from enum import Enum
 
+COMMIT_ACK_TIMEOUT = 500
 
 class TransactionState(Enum):
     NOT_STARTED = 1
     INITIATED = 2
-    PREPARED = 3
-    COMMITTED = 4
-    ABORTED = 5
-    COMPLETED = 6
+    COMMITTABLE = 3
+    ABORTABLE = 4
+    COMPLETED = 5
 
 
 class Transaction:
@@ -67,6 +67,9 @@ class ProtocolDB:
     def check_all_cohorts_acked(self, transaction_id):
         return self.transactions[transaction_id].check_all_cohorts_acked()
 
+    def empty(self):
+        return len(self.transactions) == 0
+
 
 class Coordinator:
     """
@@ -79,9 +82,23 @@ class Coordinator:
         self.cohorts = []
         self.log_file = log_file
         self.protocol_DB = ProtocolDB()
+        self.recovery_thread = RecoveryThread()
+        self.timeout_transaction_list = dict()
 
     def start(self):
-        self.recover_from_logs()
+        self.reconstruct_protocol_DB()
 
     def run(self):
-        self.construct_transaction()
+
+        if not self.protocol_DB.empty():
+            for transaction in self.protocol_DB.transactions:
+                self.timeout_transaction_list[transaction.id, COMMIT_ACK_TIMEOUT]
+            # send commit/abort to all
+            
+        #while (read from file/pipe)
+            #self.construct_transaction()
+
+if __name__ == "__main__":
+    COORDINATOR = Coordinator()
+    COORDINATOR.start()
+    COORDINATOR.run()
