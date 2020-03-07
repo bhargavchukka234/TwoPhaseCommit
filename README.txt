@@ -12,3 +12,10 @@ UI:
 	localhost:15672
 Python libraries for rabbitmq:
 	pip3 install pika --upgrade
+	
+# To pipe file for coordinator
+
+#create pipe:
+	mkpipe pipe
+#move data to pipe:
+	cat testData.txt > pipe
