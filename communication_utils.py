@@ -5,7 +5,7 @@ def sendMessageToCohort(channel, processNumber, state, transaction_id, insert_st
     # TODO: remove the hardcoded value for the queue1 and pass the actual queue name for the function
     queueName = "queue" + str(processNumber)
     messageBody = ""
-    if (state == State.PREPARE):
+    if (state == State.INITIATED):
         count = 0
         if (insert_statements_list == None):
             return
@@ -21,7 +21,7 @@ def sendMessageToCohort(channel, processNumber, state, transaction_id, insert_st
         channel.basic_publish(exchange='',
                               routing_key=queueName,
                               body=jsonMessage)
-    elif (state == State.COMMIT or state == State.ABORT):
+    elif (state == State.PREPARE or state == State.COMMIT or state == State.ABORT):
         message = {"sender": processNumber, "id" : transaction_id,"state": state, "messageBody": ""}
         jsonMessage = json.dumps(message)
         channel.basic_publish(exchange='',

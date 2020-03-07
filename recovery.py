@@ -1,3 +1,4 @@
+import transaction_log_utils
 from constants import *
 from threading import Thread
 from communication_utils import sendMessageToCohort
@@ -16,6 +17,7 @@ class RecoveryThread(Thread):
                 transaction_id = key
                 timeout = self.timeout_transaction_info[transaction_id]
                 if self.protocol_DB.check_all_cohorts_acked(transaction_id):
+                    transaction_log_utils.delete_log(transaction_id)
                     del self.timeout_transaction_info[transaction_id]
                     continue
                 cohorts = self.protocol_DB[transaction_id].cohorts
