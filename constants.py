@@ -1,6 +1,6 @@
 from enum import IntEnum
 
-COMMIT_ACK_TIMEOUT = 500
+COMMIT_ACK_TIMEOUT = 10
 TRANSACTION_SIZE = 10
 
 class State(IntEnum):

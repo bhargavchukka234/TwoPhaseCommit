@@ -15,15 +15,15 @@ class State(IntEnum):
 dbConnection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1", port="5433")
 dbConnection.autocommit = False
 cursor = dbConnection.cursor()
-METADATA = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/data/low_concurrency/metadata_small.sql"
-CREATE = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/schema/create.sql"
-DROP = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/schema/drop.sql"
-
+METADATA = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/data/low_concurrency/metadata.sql"
+CREATE = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/create.sql"
+DROP = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/drop.sql"
 
 def prepareTransaction(message):
-    lines = message.split(':')
+    lines = message.split(';')
     for line in lines:
-        cursor.execute(line)
+        if line != "":
+            cursor.execute(line)
 
 def commitTransaction():
     dbConnection.commit()
@@ -33,30 +33,32 @@ def abortTransaction():
 
 def callback(ch, method, properties, body):
     #on recieveing a message from the coordinator, send a response
-    print(" [x] Received information from the coordinator")
     dict_obj = json.loads(body)
-    new_obj = dict_obj.get('message')
-    sender = new_obj.get('sender')
-    state = new_obj.get('state')
+    sender = dict_obj.get('sender')
+    state = dict_obj.get('state')
+    transaction_id = dict_obj.get('id')
     newState = None
-    print ("state %d" + state)
+    #print ("state %d" + state)
     if(state == State.PREPARE):
-        message = new_obj.get('messageBody')
+        transactionMessage = dict_obj.get('messageBody')
         #get a return to check if commit can take place
-        prepareTransaction(message)
-        newMessage = {"sender" : sender, "state" : int(State.PREPARED), "messageBody" : ""}
+        prepareTransaction(transactionMessage)
+        newMessage = {"sender" : sender, "id": transaction_id,"state" : int(State.PREPARED), "messageBody" : ""}
         jsonMessage = json.dumps(newMessage)
+        print("sending prepared message to coordinator")
         channel.basic_publish(exchange='',
                         routing_key='coordinatorQueue',
                         body=jsonMessage)
     elif(state == State.COMMIT):
+        print("received a commit message from the coordinator")
         commitTransaction()
-        newMessage = {"sender" : sender, "state" : int(State.ACK), "messageBody":""}
+        newMessage = {"sender" : sender, "id": transaction_id, "state" : int(State.ACK), "messageBody":""}
         jsonMessage = json.dumps(newMessage)
         channel.basic_publish(exchange='',
                         routing_key='coordinatorQueue',
                         body=jsonMessage)
     elif(state == State.ABORT):
+        print("received an abort message from the coordinator")
         abortTransaction()
 
 
@@ -83,10 +85,13 @@ def addMetaData():
 
 
 if __name__== "__main__":
+    print("hello1")
     intializeDB(DROP)
+    print("hello2")
     intializeDB(CREATE);
+    print("hello3")
     addMetaData();
-    print ("hello")
+    print ("done")
     rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = rabbitMQConnection.channel()
     #channel.queue_declare(queue='hello', durable=True)

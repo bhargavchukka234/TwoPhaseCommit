@@ -37,7 +37,7 @@ class Transaction:
         return len(self.ack_table) == len(self.cohorts)
 
     def get_prepared_decision(self):
-        for cohort, decision in self.prepared_table:
+        for decision in self.prepared_table.values():
             if decision == State.ABORT:
                 return State.ABORT
         return State.COMMIT
@@ -47,7 +47,7 @@ class ProtocolDB:
 
     def __init__(self):
         self.transactions = dict()
-        self.transactions_limit = 10
+        self.transactions_limit = 2
 
     def add_transaction(self, transaction, cohorts):
         self.transactions[transaction.id] = transaction
@@ -107,12 +107,12 @@ class Coordinator:
             for transaction in self.protocol_DB.transactions:
                 self.timeout_transaction_info[transaction.id] = COMMIT_ACK_TIMEOUT
                 for cohort in transaction.cohorts:
-                    sendMessageToCohort(self.channel, cohort, State.COMMIT)
+                    sendMessageToCohort(self.channel, cohort, State.COMMIT, transaction.id)
 
         # initialize a queue per cohort
         for cohortQueue in self.cohorts:
             self.channel.queue_declare(queue="queue"+str(cohortQueue), durable=True)
-        # Queue on which the coordinator recieves a response from the cohorts
+        # Queue on which the coordinator receives a response from the cohorts
         self.channel.queue_declare(queue='coordinatorQueue', durable=True)
 
         mq_recieve_thread = threading.Thread(target= self.initialize_listener)
@@ -131,7 +131,6 @@ class Coordinator:
     # reads each line from pipe and calls begin_transaction_if_eligible with sql statements of a transaction
     def generate_transactions_from_file(self):
 
-        self.protocol_db = ProtocolDB()
         insert_records_batch = []
         current_transaction_size = 0
         insert_statements_pipe = open("pipe", "r")
@@ -143,29 +142,33 @@ class Coordinator:
                 current_transaction_size = 0
                 self.begin_transaction_if_eligible(insert_records_batch)
                 insert_records_batch = []
+                insert_records_batch.append(line.strip())
 
         self.begin_transaction_if_eligible(insert_records_batch)
 
-    # starts the transaction if there is space in protocol_db for the new transaction
+    # starts the transaction if there is space in protocol_DB for the new transaction
     def begin_transaction_if_eligible(self, insert_records_batch):
 
         if len(insert_records_batch) == 0:
             return
 
+        while (self.protocol_DB.check_if_transactions_limit_reached()):
+            time.sleep(1)
+
         transaction, cohort_insert_statements_list = self.generate_transaction(insert_records_batch)
 
-        while (self.protocol_db.check_if_transactions_limit_reached()):
-            time.sleep(1)
-        self.protocol_db.add_transaction(transaction, cohort_insert_statements_list.keys())
+        self.protocol_DB.add_transaction(transaction, cohort_insert_statements_list.keys())
         # send out the first message to each cohort
-        for key in cohort_insert_statements_list.keys():
-            sendMessageToCohort(self.channel, key, State.PREPARE, cohort_insert_statements_list.get(key))
+        for cohort in cohort_insert_statements_list.keys():
+            sendMessageToCohort(self.channel, cohort, State.PREPARE, transaction.id, cohort_insert_statements_list.get(cohort))
             # send out the first set of messages */
+        print(self.protocol_DB.transactions)
 
     # create transaction object and cohort to its insert statements mapping
     def generate_transaction(self, insert_records_batch):
-        transaction = Transaction(uuid.uuid1())
 
+
+        transaction = Transaction(str(uuid.uuid1()))
         cohort_insert_statements_list = dict()
         for insert_record in insert_records_batch:
             temp = insert_record.split(" ", 2)
@@ -183,38 +186,38 @@ class Coordinator:
 
 
     def cohortResponse(self, channel, method, properties, body):
-        print(" [x] Received response from cohort %r" % body)
 
         #the coordinator proceeds with sending the next message after receiving a message from receiver
         dict_obj = json.loads(body)
-        new_obj = dict_obj.get('message')
-        state = new_obj.get('state')
-        transaction_id = new_obj.get('id')
-        cohort = new_obj.get('cohort')
-
+        state = dict_obj.get('state')
+        transaction_id = dict_obj.get('id')
+        cohort = dict_obj.get('sender')
+        print("in response : " + str(self.protocol_DB.transactions))
         if(state == State.PREPARED or state == State.ABORT):
             # mark the receipt of this PREPARED message in the protocol DB for the particular cohort
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
             # check if all cohorts have responded to prepare
             if self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id):
                 # send COMMIT/ABORT depending on the final decision of the cohorts
-                sendMessageToCohort(channel, cohort, self.protocol_DB.get_prepared_decision(transaction_id))
+                for cohort_name in self.protocol_DB.transactions[transaction_id].cohorts:
+                    sendMessageToCohort(channel, cohort_name, self.protocol_DB.get_prepared_decision(transaction_id), transaction_id)
                 # add this transaction to the timer monitor list for recovery
                 self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
 
         elif(state == State.ACK):
+            print("received an acknowledgement from the cohort")
             # mark the receipt of this ACK message in the protocol DB for the particular cohort
-            self.protocol_DB.set_ack_received(transaction_id, cohort, state)
+            self.protocol_DB.set_ack_received(transaction_id, cohort)
             # check if we received acks from all the cohorts
-            if self.protocolDB.check_all_acks_received(transaction_id):
+            if self.protocol_DB.check_all_cohorts_acked(transaction_id):
                 # Remove the transaction from the protocol DB
-                self.protocolDB.remove_transaction(transaction_id)
+                self.protocol_DB.remove_transaction(transaction_id)
                 # Remove the transaction from the timer monitor list
                 if transaction_id in self.timeout_transaction_info.keys():
                     del self.timeout_transaction_info[transaction_id]
 
 
 if __name__ == "__main__":
-    COORDINATOR = Coordinator(3)
+    COORDINATOR = Coordinator(2)
     COORDINATOR.start()
     COORDINATOR.run()

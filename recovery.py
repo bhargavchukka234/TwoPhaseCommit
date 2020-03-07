@@ -1,6 +1,7 @@
 from constants import *
 from threading import Thread
 from communication_utils import sendMessageToCohort
+import time
 
 class RecoveryThread(Thread):
 
@@ -11,15 +12,18 @@ class RecoveryThread(Thread):
     
     def run(self):
         while True:
-            for transaction_id, timeout in self.timeout_transaction_info:
+            for key in self.timeout_transaction_info.keys():
+                transaction_id = key
+                timeout = self.timeout_transaction_info[transaction_id]
                 if self.protocol_DB.check_all_cohorts_acked(transaction_id):
                     del self.timeout_transaction_info[transaction_id]
                     continue
                 cohorts = self.protocol_DB[transaction_id].cohorts
                 if len(cohorts) > 0 and timeout == 0:
-                    sendMessageToCohort(self.channel, cohort, self.protocol_DB[transaction_id].state)
+                    for cohort in self.cohorts:
+                        sendMessageToCohort(self.channel, cohort, self.protocol_DB[transaction_id].state)
                     self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
                 else:
                     self.timeout_transaction_info[transaction_id] = timeout - 1
-
+                time.sleep(1)
 
