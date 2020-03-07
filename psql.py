@@ -1,4 +1,6 @@
 import time
+from aifc import Error
+
 import psycopg2
 
 METADATA = "/home/akshayvb/Downloads/project1/data/low_concurrency/metadata_mysql.sql"

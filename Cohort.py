@@ -22,7 +22,7 @@ DROP = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/schema/d
 
 def prepareTransaction(message):
     lines = message.split(':')
-    for line in Lines:
+    for line in lines:
         cursor.execute(line)
 
 def commitTransaction():
@@ -38,7 +38,7 @@ def callback(ch, method, properties, body):
     new_obj = dict_obj.get('message')
     sender = new_obj.get('sender')
     state = new_obj.get('state')
-    newState = none
+    newState = None
     print ("state %d" + state)
     if(state == State.PREPARE):
         message = new_obj.get('messageBody')

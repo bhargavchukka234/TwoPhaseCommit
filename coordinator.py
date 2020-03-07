@@ -3,6 +3,9 @@ from recovery import RecoveryThread
 from constants import *
 import pika
 import json
+import uuid
+import time
+import threading
 
 class Transaction:
 
@@ -44,6 +47,7 @@ class ProtocolDB:
 
     def __init__(self):
         self.transactions = dict()
+        self.transactions_limit = 10
 
     def add_transaction(self, transaction, cohorts):
         self.transactions[transaction.id] = transaction
@@ -70,6 +74,8 @@ class ProtocolDB:
     def get_prepared_decision(self, transaction_id):
         return self.transactions[transaction_id].get_prepared_decision()
 
+    def check_if_transactions_limit_reached(self):
+        return len(self.transactions) >= self.transactions_limit
     def empty(self):
         return len(self.transactions) == 0
 
@@ -79,9 +85,9 @@ class Coordinator:
     Coordinator for a 2 Phase Commit
     """
 
-    def __init__(self):
+    def __init__(self, number_of_cohorts):
         """Constructor"""
-        self.cohorts = []
+        self.cohorts = range(number_of_cohorts)
         self.protocol_DB = ProtocolDB()
         self.timeout_transaction_info = dict()
         self.recovery_thread = RecoveryThread(self.protocol_DB, self.timeout_transaction_info)
@@ -90,8 +96,91 @@ class Coordinator:
         rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
         # create one channel which can create multiple queues
         self.channel = rabbitMQConnection.channel()
+        #self.send_channel = rabbitMQConnection.channel()
         # start the recovery thread
         self.recovery_thread.start()
+
+
+    def run(self):
+        # required if coordinator comes up after crash/failure
+        if not self.protocol_DB.empty():
+            for transaction in self.protocol_DB.transactions:
+                self.timeout_transaction_info[transaction.id] = COMMIT_ACK_TIMEOUT
+                for cohort in transaction.cohorts:
+                    sendMessageToCohort(self.channel, cohort, State.COMMIT)
+
+        # initialize a queue per cohort
+        for cohortQueue in self.cohorts:
+            self.channel.queue_declare(queue="queue"+str(cohortQueue), durable=True)
+        # Queue on which the coordinator recieves a response from the cohorts
+        self.channel.queue_declare(queue='coordinatorQueue', durable=True)
+
+        mq_recieve_thread = threading.Thread(target= self.initialize_listener)
+        mq_recieve_thread.start()
+        self.generate_transactions_from_file()
+
+    def initialize_listener(self):
+        rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+        # create one channel which can create multiple queues
+        self.consumer_channel = rabbitMQConnection.channel()
+        self.consumer_channel.basic_consume(queue='coordinatorQueue',
+                                   auto_ack=True,
+                         on_message_callback=self.cohortResponse)
+        self.consumer_channel.start_consuming()
+
+    # reads each line from pipe and calls begin_transaction_if_eligible with sql statements of a transaction
+    def generate_transactions_from_file(self):
+
+        self.protocol_db = ProtocolDB()
+        insert_records_batch = []
+        current_transaction_size = 0
+        insert_statements_pipe = open("pipe", "r")
+        for line in insert_statements_pipe:
+            if current_transaction_size < TRANSACTION_SIZE:
+                insert_records_batch.append(line.strip())
+                current_transaction_size += 1
+            else:
+                current_transaction_size = 0
+                self.begin_transaction_if_eligible(insert_records_batch)
+                insert_records_batch = []
+
+        self.begin_transaction_if_eligible(insert_records_batch)
+
+    # starts the transaction if there is space in protocol_db for the new transaction
+    def begin_transaction_if_eligible(self, insert_records_batch):
+
+        if len(insert_records_batch) == 0:
+            return
+
+        transaction, cohort_insert_statements_list = self.generate_transaction(insert_records_batch)
+
+        while (self.protocol_db.check_if_transactions_limit_reached()):
+            time.sleep(1)
+        self.protocol_db.add_transaction(transaction, cohort_insert_statements_list.keys())
+        # send out the first message to each cohort
+        for key in cohort_insert_statements_list.keys():
+            sendMessageToCohort(self.channel, key, State.PREPARE, cohort_insert_statements_list.get(key))
+            # send out the first set of messages */
+
+    # create transaction object and cohort to its insert statements mapping
+    def generate_transaction(self, insert_records_batch):
+        transaction = Transaction(uuid.uuid1())
+
+        cohort_insert_statements_list = dict()
+        for insert_record in insert_records_batch:
+            temp = insert_record.split(" ", 2)
+            timestamp = temp[0]
+            sensor_id = temp[1]
+            insert_statement = temp[2]
+            hash_value = hash((timestamp, sensor_id)) % len(self.cohorts)
+
+            if hash_value not in cohort_insert_statements_list.keys():
+                cohort_insert_statements_list[hash_value] = [insert_statement]
+            else:
+                cohort_insert_statements_list[hash_value].append(insert_statement)
+
+        return transaction, cohort_insert_statements_list
+
 
     def cohortResponse(self, channel, method, properties, body):
         print(" [x] Received response from cohort %r" % body)
@@ -110,7 +199,7 @@ class Coordinator:
             if self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id):
                 # send COMMIT/ABORT depending on the final decision of the cohorts
                 sendMessageToCohort(channel, cohort, self.protocol_DB.get_prepared_decision(transaction_id))
-                # add this transaction to the timer monitor list for recovery 
+                # add this transaction to the timer monitor list for recovery
                 self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
 
         elif(state == State.ACK):
@@ -125,33 +214,7 @@ class Coordinator:
                     del self.timeout_transaction_info[transaction_id]
 
 
-    def run(self):
-        # required if coordinator comes up after crash/failure
-        if not self.protocol_DB.empty():
-            for transaction in self.protocol_DB.transactions:
-                self.timeout_transaction_info[transaction.id] = COMMIT_ACK_TIMEOUT
-                for cohort in transaction.cohorts:
-                    sendMessageToCohort(self.channel, cohort, State.COMMIT)
-
-        cohortQueues = ["queue1", "queue2", "queue3"]
-        # initialize a queue per cohort
-        self.channel.queue_declare(queue=cohortQueues[0], durable=True)
-        # Queue on which the coordinator recieves a response from the cohorts
-        self.channel.queue_declare(queue='coordinatorQueue', durable=True)
-        # send out the first message to each coordinator
-        i = 1
-        sendMessageToCohort(self.channel, i, State.PREPARE)
-        # send out the first set of messages */
-        # while True:
-        # loop through all the queues to send transactions to each site
-        # time.sleep(2)
-        self.channel.basic_consume(queue='coordinatorQueue',
-                                   auto_ack=True,
-                                   on_message_callback=self.cohortResponse)
-        self.channel.start_consuming()
-
-
 if __name__ == "__main__":
-    COORDINATOR = Coordinator()
+    COORDINATOR = Coordinator(3)
     COORDINATOR.start()
     COORDINATOR.run()
