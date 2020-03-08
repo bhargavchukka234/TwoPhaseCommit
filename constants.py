@@ -1,5 +1,6 @@
 from enum import IntEnum
 
+PREPARED_TIMEOUT = 10
 COMMIT_ACK_TIMEOUT = 10
 TRANSACTION_SIZE = 10
 

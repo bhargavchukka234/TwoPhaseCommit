@@ -48,6 +48,11 @@ class ProtocolDB:
     def empty(self):
         return len(self.transactions) == 0
 
+    def force_abort_transaction(self, transaction_id):
+        self.transactions[transaction_id].needs_force_abort = True
+
+    def needs_force_abort(self, transaction_id):
+        return self.transactions[transaction_id].needs_force_abort
 
 class Coordinator:
     """
@@ -58,14 +63,16 @@ class Coordinator:
         """Constructor"""
         self.cohorts = range(number_of_cohorts)
         self.protocol_DB = ProtocolDB()
+        self.prepare_timeout_info = dict()
         self.timeout_transaction_info = dict()
-        self.recovery_thread = RecoveryThread(self.protocol_DB, self.timeout_transaction_info)
+        self.recovery_thread = RecoveryThread(self.protocol_DB, self.prepare_timeout_info, self.timeout_transaction_info)
 
     def start(self):
         rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
         # create one channel which can create multiple queues
         self.channel = rabbitMQConnection.channel()
         # self.send_channel = rabbitMQConnection.channel()
+        self.recovery_thread.set_channel(self.channel)
         # start the recovery thread
         self.recovery_thread.start()
 
@@ -139,6 +146,8 @@ class Coordinator:
         for cohort in cohorts:
             sendMessageToCohort(self.channel, cohort, State.PREPARE, transaction.id)
 
+        self.prepare_timeout_info[transaction.id] = PREPARED_TIMEOUT
+
         #print(self.protocol_DB.transactions)
 
     # create transaction object and cohort to its insert statements mapping
@@ -181,7 +190,7 @@ class Coordinator:
             # mark the receipt of this PREPARED message in the protocol DB for the particular cohort
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
             # check if all cohorts have responded to prepare
-            if self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id):
+            if self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id) and not self.protocol_DB.needs_force_abort(transaction_id):
                 transaction = self.protocol_DB.transactions[transaction_id]
                 # Log to persistent storage
                 transaction_log_utils.insert_log(transaction)
@@ -191,6 +200,9 @@ class Coordinator:
                                         transaction_id)
                 # add this transaction to the timer monitor list for recovery
                 self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
+                print("=================================")
+                if transaction_id in self.prepare_timeout_info.keys():
+                    del self.prepare_timeout_info[transaction_id]
 
         elif (state == State.ACK):
             print("received an acknowledgement from the cohort")

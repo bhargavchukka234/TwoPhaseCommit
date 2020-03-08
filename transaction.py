@@ -8,6 +8,7 @@ class Transaction:
         self.prepared_table = dict()
         self.state = State.INITIATED
         self.cohorts = []
+        self.needs_force_abort = False
 
     def set_ack_received(self, cohort):
         if cohort in self.cohorts:
@@ -30,6 +31,8 @@ class Transaction:
         return len(self.ack_table) == len(self.cohorts)
 
     def get_prepared_decision(self):
+        if self.needs_force_abort:
+            return State.ABORT
         for decision in self.prepared_table.values():
             if decision == State.ABORT:
                 return State.ABORT
