@@ -168,6 +168,7 @@ if __name__ == "__main__":
     ps_connection = postgreSQL_pool.getconn()
     # clean up previous prepared Statements
     ps_connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+    # TODO: modify the cleanup to not delete transacations which need to be implemented
     cleanupPrepared(ps_connection)
     print("hello1")
     intializeDB(DROP, ps_connection)
@@ -179,7 +180,6 @@ if __name__ == "__main__":
 
     rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = rabbitMQConnection.channel()
-    # TODO: handle the restart and re-reading the transaction DB
     # listen on the queue created by the coordinator
     channel.basic_consume(queue='queue1',
                           auto_ack=True,
