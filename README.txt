@@ -22,3 +22,10 @@ Python libraries for rabbitmq:
 
 # table for coordinator transaction logs(server running on 5431 port)
 CREATE TABLE transaction_log(id varchar(100) primary key, state varchar(100) not null, cohorts varchar);
+
+# alter the max_prepared_connections variable: 
+1) Log into superuser and run : ALTER SYSTEM SET max_prepared_connections TO 100;
+2) Restart the database server 
+
+# view currently prepared transactions holding locks 
+SELECT gid FROM pg_prepared_xacts WHERE database = current_database()
