@@ -16,6 +16,9 @@ Python libraries for rabbitmq:
 # To pipe file for coordinator
 
 #create pipe:
-	mkpipe pipe
+	mkfifo pipe
 #move data to pipe:
 	cat testData.txt > pipe
+
+# table for coordinator transaction logs(server running on 5431 port)
+CREATE TABLE transaction_log(id varchar(100) primary key, state varchar(100) not null, cohorts varchar);

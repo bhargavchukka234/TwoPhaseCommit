@@ -17,7 +17,7 @@ def sendMessageToCohort(channel, processNumber, state, transaction_id, insert_st
                     count += 1
         message = {"sender": processNumber, "id": transaction_id, "state": int(state), "messageBody": messageBody}
         jsonMessage = json.dumps(message)
-        print("Sending transactions to the cohort "+str(processNumber))
+        print("Sending statements of transaction : " + transaction_id + " to the cohort "+str(processNumber))
         channel.basic_publish(exchange='',
                               routing_key=queueName,
                               body=jsonMessage)

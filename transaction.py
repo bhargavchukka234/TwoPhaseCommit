@@ -30,10 +30,9 @@ class Transaction:
     def check_all_cohorts_acked(self):
         return len(self.ack_table) == len(self.cohorts)
 
-    def get_prepared_decision(self):
-        if self.needs_force_abort:
-            return State.ABORT
+    def compute_decision(self):
         for decision in self.prepared_table.values():
             if decision == State.ABORT:
-                return State.ABORT
-        return State.COMMIT
+                self.state = State.ABORT
+                return
+        self.state = State.COMMIT

@@ -1,5 +1,6 @@
 from communication_utils import sendMessageToCohort
 from recovery import RecoveryThread
+from protocol_db import ProtocolDB
 from constants import *
 import transaction_log_utils
 import pika
@@ -9,50 +10,6 @@ import time
 import threading
 
 from transaction import Transaction
-
-
-class ProtocolDB:
-
-    def __init__(self):
-        self.transactions = dict()
-        self.transactions_limit = 2
-
-    def add_transaction(self, transaction, cohorts):
-        self.transactions[transaction.id] = transaction
-        self.transactions[transaction.id].set_cohort_list(cohorts)
-
-    def remove_transaction(self, transaction_id):
-        del self.transactions[transaction_id]
-
-    def set_ack_received(self, transaction_id, cohort):
-        self.transactions[transaction_id].set_ack_received(cohort)
-
-    def set_cohort_decision(self, transaction_id, cohort, cohort_status):
-        self.transactions[transaction_id].set_cohort_decision(cohort, cohort_status)
-
-    def set_transaction_state(self, transaction_id, state):
-        self.transactions[transaction_id].set_transaction_state(state)
-
-    def check_all_cohorts_responded_to_prepare(self, transaction_id):
-        return self.transactions[transaction_id].check_all_cohorts_responded_to_prepare()
-
-    def check_all_cohorts_acked(self, transaction_id):
-        return self.transactions[transaction_id].check_all_cohorts_acked()
-
-    def get_prepared_decision(self, transaction_id):
-        return self.transactions[transaction_id].get_prepared_decision()
-
-    def check_if_transactions_limit_reached(self):
-        return len(self.transactions) >= self.transactions_limit
-
-    def empty(self):
-        return len(self.transactions) == 0
-
-    def force_abort_transaction(self, transaction_id):
-        self.transactions[transaction_id].needs_force_abort = True
-
-    def needs_force_abort(self, transaction_id):
-        return self.transactions[transaction_id].needs_force_abort
 
 class Coordinator:
     """
@@ -78,11 +35,13 @@ class Coordinator:
 
     def run(self):
         # required if coordinator comes up after crash/failure
+        self.protocol_DB.transactions = transaction_log_utils.get_pending_transactions()
+
         if not self.protocol_DB.empty():
-            for transaction in self.protocol_DB.transactions:
+            for transaction in self.protocol_DB.transactions.values():
                 self.timeout_transaction_info[transaction.id] = COMMIT_ACK_TIMEOUT
                 for cohort in transaction.cohorts:
-                    sendMessageToCohort(self.channel, cohort, State.COMMIT, transaction.id)
+                    sendMessageToCohort(self.channel, cohort, transaction.state, transaction.id)
 
         # initialize a queue per cohort
         for cohortQueue in self.cohorts:
@@ -109,13 +68,14 @@ class Coordinator:
         insert_records_batch = []
         current_transaction_size = 0
         insert_statements_pipe = open("pipe", "r")
+        counter = 0
         for line in insert_statements_pipe:
             if current_transaction_size < TRANSACTION_SIZE:
                 insert_records_batch.append(line.strip())
                 current_transaction_size += 1
             else:
-                current_transaction_size = 0
                 self.begin_transaction_if_eligible(insert_records_batch)
+                current_transaction_size = 1
                 insert_records_batch = []
                 insert_records_batch.append(line.strip())
 
@@ -191,12 +151,13 @@ class Coordinator:
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
             # check if all cohorts have responded to prepare
             if self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id) and not self.protocol_DB.needs_force_abort(transaction_id):
+                self.protocol_DB.compute_decision(transaction_id)
                 transaction = self.protocol_DB.transactions[transaction_id]
                 # Log to persistent storage
                 transaction_log_utils.insert_log(transaction)
                 # send COMMIT/ABORT depending on the final decision of the cohorts
                 for cohort_name in transaction.cohorts:
-                    sendMessageToCohort(channel, cohort_name, self.protocol_DB.get_prepared_decision(transaction_id),
+                    sendMessageToCohort(channel, cohort_name, transaction.state,
                                         transaction_id)
                 # add this transaction to the timer monitor list for recovery
                 self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
@@ -220,6 +181,6 @@ class Coordinator:
 
 
 if __name__ == "__main__":
-    COORDINATOR = Coordinator(2)
+    COORDINATOR = Coordinator(NUMBER_OF_COHORTS)
     COORDINATOR.start()
     COORDINATOR.run()
