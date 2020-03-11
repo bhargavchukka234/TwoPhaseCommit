@@ -8,7 +8,6 @@ class Transaction:
         self.prepared_table = dict()
         self.state = State.INITIATED
         self.cohorts = []
-        self.needs_force_abort = False
 
     def set_ack_received(self, cohort):
         if cohort in self.cohorts:
@@ -20,6 +19,9 @@ class Transaction:
 
     def set_transaction_state(self, state):
         self.state = state
+
+    def get_transaction_state(self):
+        return self.state
 
     def set_cohort_list(self, cohorts):
         self.cohorts = cohorts

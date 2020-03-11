@@ -1,24 +1,23 @@
+import getopt
+
 import pika
-import time
-from enum import IntEnum
 import psycopg2
 from psycopg2 import Error
 from psycopg2 import pool
 import json
+import sys
+
+from cohort_recovery import CohortRecoveryThread
 from constants import *
 
 # create a connection the database
 # dbConnection.autocommit = False
 # cursor = dbConnection.cursor()
-postgreSQL_pool = psycopg2.pool.SimpleConnectionPool(1, 20, user="newuser",
-                                                     password="password",
-                                                     host="127.0.0.1",
-                                                     port="5433",
-                                                     database="test")
 transaction_connection = {}
-METADATA = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/data/low_concurrency/metadata.sql"
-CREATE = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/schema/create.sql"
-DROP = "/Users/tanvigupta/Documents/Winter_2020/CS223/project2/project2/schema/drop.sql"
+decision_timeout_transaction_info = {}
+METADATA = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/data/low_concurrency/metadata.sql"
+CREATE = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/create.sql"
+DROP = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/drop.sql"
 
 
 def startTransaction(transaction_id):
@@ -33,32 +32,34 @@ def immediateAbort(transaction_id):
     ps_connection = transaction_connection.get(transaction_id)
     cursor = ps_connection.cursor()
     cursor.execute("rollback")
+    postgreSQL_pool.putconn(ps_connection)
 
 
 def executeStatements(transaction_id, transactionMessage):
     ps_connection = transaction_connection.get(transaction_id)
-    if ps_connection == "":
+    if ps_connection is None or ps_connection == "":
         print("no connection found ")
         return -1
     cursor = ps_connection.cursor()
     Lines = transactionMessage.split(';')
-    for line in Lines:
-        if line != "":
-            try:
+    try:
+        for line in Lines:
+            if line != "":
                 cursor.execute(line)
-            except Error:
-                # transaction errors that might occur at initiated state
-                immediateAbort(transaction_id)
-                # This is to indicate that a transaction did not succeed before PREPARE was run
-                transaction_connection[transaction_id] = None
+    except Error:
+        # transaction errors that might occur at initiated state
+        immediateAbort(transaction_id)
+        # This is to indicate that a transaction did not succeed before PREPARE was run
+        transaction_connection[transaction_id] = None
 
 
 def prepareTransaction(transaction_id):
     ps_connection = transaction_connection.get(transaction_id)
     cursor = ps_connection.cursor()
-    prepare_stmt = "PREPARE TRANSACTION '" + str(transaction_id.split('-')[0]) + "'"
+    prepare_stmt = "PREPARE TRANSACTION '" + str(transaction_id) + "'"
     try:
         cursor.execute(prepare_stmt)
+        decision_timeout_transaction_info[transaction_id] = DECISION_TIMEOUT
     except Error:
         abortTransaction(transaction_id)
         return State.ABORT
@@ -68,19 +69,23 @@ def prepareTransaction(transaction_id):
 def commitTransaction(transaction_id):
     ps_connection = transaction_connection.get(transaction_id)
     cursor = ps_connection.cursor()
-    prepare_stmt = "COMMIT PREPARED '" + str(transaction_id.split('-')[0]) + "';"
+    prepare_stmt = "COMMIT PREPARED '" + str(transaction_id) + "';"
     cursor.execute(prepare_stmt)
     del transaction_connection[transaction_id]
+    del decision_timeout_transaction_info[transaction_id]
+    postgreSQL_pool.putconn(ps_connection)
 
 
 # This function is called when the coordinator sends an abort statement
 def abortTransaction(transaction_id):
     ps_connection = transaction_connection.get(transaction_id)
     cursor = ps_connection.cursor()
-    prepare_stmt = "ROLLBACK PREPARED '" + str(transaction_id.split('-')[0]) + "';"
+    prepare_stmt = "ROLLBACK PREPARED '" + str(transaction_id) + "';"
     cursor.execute(prepare_stmt)
     # close the connection to the database once aborted to the database
     del transaction_connection[transaction_id]
+    del decision_timeout_transaction_info[transaction_id]
+    postgreSQL_pool.putconn(ps_connection)
 
 
 def callback(ch, method, properties, body):
@@ -94,15 +99,13 @@ def callback(ch, method, properties, body):
         check if a connection exists for the transaction ID else create a connection and start the transaction
         '''
         if transaction_id not in transaction_connection:
-            db_connection = postgreSQL_pool.getconn()
-            ''' enabling autocommit to run direct psql commands '''
-            ps_connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-            transaction_connection[transaction_id] = db_connection
+            createDatabaseConnection(transaction_id)
             startTransaction(transaction_id)
             executeStatements(transaction_id, transactionMessage)
         elif transaction_id in transaction_connection:
             executeStatements(transaction_id, transactionMessage)
     elif state == State.PREPARE:
+        print("received a prepare message from the coordinator for transaction " + str(transaction_id))
         if transaction_connection.get(transaction_id) is None:
             ''' The transaction has already been rolled back 
                 because of insert statement failures inform 
@@ -114,25 +117,34 @@ def callback(ch, method, properties, body):
         else:
             ''' Prepare the transaction for commit '''
             ret_state = prepareTransaction(transaction_id)
+        sendMessageToCoordinator(channel, sender, transaction_id, ret_state)
 
-        newMessage = {"sender": sender, "id": transaction_id, "state": ret_state, "messageBody": ""}
-        jsonMessage = json.dumps(newMessage)
-        print("sending PREPARED message to coordinator"+ str(transaction_id))
-        channel.basic_publish(exchange='',
-                              routing_key='coordinatorQueue',
-                              body=jsonMessage)
     elif state == State.COMMIT:
-        print("received a commit message from the coordinator for transaction" + str(transaction_id))
-        commitTransaction(str(transaction_id))
-        newMessage = {"sender": sender, "id": transaction_id, "state": int(State.ACK), "messageBody": ""}
-        jsonMessage = json.dumps(newMessage)
-        channel.basic_publish(exchange='',
-                              routing_key='coordinatorQueue',
-                              body=jsonMessage)
+        print("received a commit message from the coordinator for transaction " + str(transaction_id))
+        if transaction_id in transaction_connection:
+            commitTransaction(str(transaction_id))
+        sendMessageToCoordinator(channel, sender, transaction_id, State.ACK)
     elif state == State.ABORT:
-        print("received an abort message from the coordinator"+ str(transaction_id))
+        print("received an abort message from the coordinator " + str(transaction_id))
         if transaction_id in transaction_connection:
             abortTransaction(str(transaction_id))
+        # coordinator expects ack from cohort for abort
+        sendMessageToCoordinator(channel, sender, transaction_id, State.ACK)
+
+
+def sendMessageToCoordinator(channel, sender, transaction_id, state):
+    newMessage = {"sender": sender, "id": transaction_id, "state": int(state), "messageBody": ""}
+    jsonMessage = json.dumps(newMessage)
+    channel.basic_publish(exchange='',
+                          routing_key='coordinatorQueue',
+                          body=jsonMessage)
+
+
+def createDatabaseConnection(transaction_id):
+    db_connection = postgreSQL_pool.getconn()
+    ''' enabling autocommit to run direct psql commands '''
+    db_connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+    transaction_connection[transaction_id] = db_connection
 
 
 def intializeDB(fileName, ps_connection):
@@ -157,31 +169,100 @@ def addMetaData(ps_connection):
             line = line[:-1]
             cursor.execute(line)
 
+
 def cleanupPrepared(ps_connection):
     curs = ps_connection.cursor()
-    curs.execute("SELECT gid FROM pg_prepared_xacts WHERE database = current_database()")
-    for (gid,) in curs.fetchall():
+    gids = getPreparedTransactions(ps_connection)
+    for gid in gids:
         curs.execute("ROLLBACK PREPARED %s", (gid,))
 
 
-if __name__ == "__main__":
+def getPreparedTransactions(ps_connection):
+    curs = ps_connection.cursor()
+    curs.execute("SELECT gid FROM pg_prepared_xacts WHERE database = current_database()")
+    gids = []
+    for (gid,) in curs.fetchall():
+        gids.append(gid)
+    return gids
+
+
+def dbCleanup():
     ps_connection = postgreSQL_pool.getconn()
     # clean up previous prepared Statements
     ps_connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-    # TODO: modify the cleanup to not delete transacations which need to be implemented
     cleanupPrepared(ps_connection)
-    print("hello1")
     intializeDB(DROP, ps_connection)
-    print("hello2")
-    intializeDB(CREATE, ps_connection);
-    print("hello3")
+    intializeDB(CREATE, ps_connection)
     addMetaData(ps_connection)
-    print("done")
+    print("cleanup done")
+    postgreSQL_pool.putconn(ps_connection)
 
-    rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+
+def loadPendingTransactions():
+    ps_connection = postgreSQL_pool.getconn()
+    # get uncommitted prepared transactions and initialize connection dictionary
+    ps_connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+    for transaction_id in getPreparedTransactions(ps_connection):
+        createDatabaseConnection(transaction_id)
+    print("loaded existing prepared transactions")
+    postgreSQL_pool.putconn(ps_connection)
+
+
+def initializeRecoveryThread(sender):
+
+    parameters = pika.ConnectionParameters(heartbeat=0)
+    rabbitMQConnection = pika.BlockingConnection(parameters)
+    channel = rabbitMQConnection.channel()
+
+    # request transaction decision for prepared transactions and add timer
+    for transaction_id in transaction_connection.keys():
+        sendMessageToCoordinator(channel, sender, transaction_id,  State.STATE_REQUEST)
+        decision_timeout_transaction_info[transaction_id] = DECISION_TIMEOUT
+
+    # start the recovery thread
+    cohort_recovery = CohortRecoveryThread(channel, sender, decision_timeout_transaction_info)
+    cohort_recovery.start()
+
+
+# there should be aleast one argument to give sender(cohort_id)
+if __name__ == "__main__":
+
+    myopts, args = getopt.getopt(sys.argv[1:], "cq:p:")
+    port = None
+    sender = None
+    isCleanUp = False
+
+    for opts, arg in myopts:
+        if opts == '-c':
+            isCleanUp = True
+        elif opts == '-p':
+            port = arg
+        elif opts == '-q':
+            sender = int(arg)
+
+    if sender is None or port is None:
+        print("Port(-p) or queue Id(-q) not provided. Exiting ...")
+        sys.exit(5)
+
+    postgreSQL_pool = psycopg2.pool.SimpleConnectionPool(1, 20, user="newuser",
+                                                         password="password",
+                                                         host="127.0.0.1",
+                                                         port=str(port),
+                                                         database="test")
+
+    if isCleanUp:
+        dbCleanup()
+    else:
+        loadPendingTransactions()
+
+
+    initializeRecoveryThread(sender)
+
+    parameters = pika.ConnectionParameters(heartbeat=0)
+    rabbitMQConnection = pika.BlockingConnection(parameters)
     channel = rabbitMQConnection.channel()
     # listen on the queue created by the coordinator
-    channel.basic_consume(queue='queue1',
+    channel.basic_consume(queue='queue' + str(sender),
                           auto_ack=True,
                           on_message_callback=callback)
     channel.start_consuming()

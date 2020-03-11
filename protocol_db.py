@@ -35,12 +35,14 @@ class ProtocolDB:
     def check_if_transactions_limit_reached(self):
         return len(self.transactions) >= self.transactions_limit
 
+    def check_if_transactions_exists(self, transaction_id):
+        return transaction_id in self.transactions.keys()
+
+    def get_transaction_status(self, transaction_id):
+        return self.transactions[transaction_id].get_transaction_state()
+
     def empty(self):
         return self.transactions is None or len(self.transactions) == 0
 
     def force_abort_transaction(self, transaction_id):
         self.transactions[transaction_id].set_transaction_state(State.ABORT)
-        self.transactions[transaction_id].needs_force_abort = True
-
-    def needs_force_abort(self, transaction_id):
-        return self.transactions[transaction_id].needs_force_abort
