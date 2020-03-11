@@ -2,7 +2,7 @@ from enum import IntEnum
 # coordinate configurations
 PREPARED_TIMEOUT = 10
 COMMIT_ACK_TIMEOUT = 10
-TRANSACTION_SIZE = 2
+TRANSACTION_SIZE = 100
 ACTIVE_TRANSACTIONS_LIMIT = 1
 
 # cohort configurations

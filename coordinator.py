@@ -160,7 +160,7 @@ class Coordinator:
         # respond to the cohort request for current state
         if state == State.STATE_REQUEST:
             if self.protocol_DB.check_if_transactions_exists(transaction_id):
-                sendMessageToCohort(channel, cohort, self.protocol_DB.get_transaction_status(),
+                sendMessageToCohort(channel, cohort, self.protocol_DB.get_transaction_status(transaction_id),
                                     transaction_id)
             else:
                 sendMessageToCohort(channel, cohort, State.ABORT,
@@ -190,7 +190,7 @@ class Coordinator:
                     del self.prepare_timeout_info[transaction_id]
 
         elif (state == State.ACK):
-            print("received an acknowledgement from the cohort")
+            print("received an acknowledgement from the cohort : " + str(cohort))
             # mark the receipt of this ACK message in the protocol DB for the particular cohort
             self.protocol_DB.set_ack_received(transaction_id, cohort)
             # check if we received acks from all the cohorts
