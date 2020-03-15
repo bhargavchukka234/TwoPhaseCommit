@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import threading
+from multiprocessing import Process
 import time
 import unittest
 
@@ -48,18 +48,18 @@ class TestTwoPhaseCommit(unittest.TestCase):
     def test_1(self):
         self.db_clean_up()
         self.coordinator.set_test_name("test1")
-        coordinator_main_thread = threading.Thread(target=self.coordinator.run)
-        cohort1_main_thread = Thread(target=self.cohort1.run)
-        cohort2_main_thread = Thread(target=self.cohort2.run)
-        cohort3_main_thread = Thread(target=self.cohort3.run)
+        coordinator_process = Process(target=self.coordinator.run)
+        cohort1_process = Process(target=self.cohort1.run)
+        cohort2_process = Process(target=self.cohort2.run)
+        cohort3_process = Process(target=self.cohort3.run)
         print("coordinator starting")
-        coordinator_main_thread.start()
+        coordinator_process.start()
         print("coordinator started")
-        cohort1_main_thread.start()
+        cohort1_process.start()
         print("1st cohort started")
-        cohort2_main_thread.start()
+        cohort2_process.start()
         print("2nd cohort started")
-        cohort3_main_thread.start()
+        cohort3_process.start()
         print("3rd cohort started")
 
         cohort_port_list = [COHORT1_PORT, COHORT2_PORT, COHORT3_PORT]
@@ -68,6 +68,12 @@ class TestTwoPhaseCommit(unittest.TestCase):
         while verifier.is_transaction_active_at_coordinator():
             time.sleep(1)
         self.assertTrue(verifier.is_aborted())
+
+        print("Assets passed")
+        coordinator_process.terminate()
+        cohort1_process.terminate()
+        cohort2_process.terminate()
+        cohort3_process.terminate()
 
         # try:
         #     self.coordinator.stop()
