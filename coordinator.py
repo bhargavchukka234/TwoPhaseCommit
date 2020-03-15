@@ -22,15 +22,14 @@ class Coordinator:
     Coordinator for a 2 Phase Commit
     """
 
-    def __init__(self, number_of_cohorts, test_name=""):
+    def __init__(self, number_of_cohorts):
         """Constructor"""
         self.cohorts = range(number_of_cohorts)
         self.protocol_DB = ProtocolDB()
         self.prepare_timeout_info = dict()
         self.timeout_transaction_info = dict()
         self.recovery_thread = RecoveryThread(self.protocol_DB, self.prepare_timeout_info, self.timeout_transaction_info)
-        self.test_name = test_name
-        self.coordinator_test_handler = CoordinatorTestHandler(test_name)
+        self.coordinator_test_handler = CoordinatorTestHandler()
 
     def start(self):
         # set the rabbitmq connection parameters and create a blocking connection (on localhost)
@@ -42,6 +41,13 @@ class Coordinator:
         self.recovery_thread.set_channel(self.channel)
         # start the recovery thread
         self.recovery_thread.start()
+
+    def stop():
+        self.recovery_thread.stop()
+        self.consumer_channel.stop_consuming()
+        self.protocol_DB.reset()
+        self.prepare_timeout_info = {}
+        self.timeout_transaction_info = {}
 
     def run(self):
         # required if coordinator comes up after crash/failure
@@ -62,6 +68,10 @@ class Coordinator:
         mq_recieve_thread = threading.Thread(target=self.initialize_listener)
         mq_recieve_thread.start()
         self.generate_transactions_from_file()
+
+    def set_test_name(self, test_name):
+        self.test_name = test_name
+        self.coordinator_test_handler.set_test_name(test_name)
 
     def initialize_listener(self):
         parameters = pika.ConnectionParameters(heartbeat=0)
@@ -168,6 +178,7 @@ class Coordinator:
         state = dict_obj.get('state')
         transaction_id = dict_obj.get('id')
         cohort = dict_obj.get('sender')
+
         # respond to the cohort request for current state
         if state == State.STATE_REQUEST:
             if self.protocol_DB.check_if_transactions_exists(transaction_id):
@@ -176,10 +187,11 @@ class Coordinator:
             else:
                 sendMessageToCohort(channel, cohort, State.ABORT,
                                     transaction_id)
-        # this is, in case if coordinator receives prepared/abort/ack message, but transaction_id not present in
-        # protocol db
+
+        # this is, in case if coordinator receives prepared/abort/ack message, but transaction_id not present in protocol db
         elif not self.protocol_DB.check_if_transactions_exists(transaction_id):
             return
+
         elif (state == State.PREPARED or state == State.ABORT):
             # mark the receipt of this PREPARED message in the protocol DB for the particular cohort
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
@@ -232,6 +244,6 @@ if __name__ == "__main__":
         if opt == '-n':
             NUMBER_OF_COHORTS = int(arg)
 
-    COORDINATOR = Coordinator(NUMBER_OF_COHORTS, test_name)
+    COORDINATOR = Coordinator(NUMBER_OF_COHORTS)
     COORDINATOR.start()
     COORDINATOR.run()
