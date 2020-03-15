@@ -22,15 +22,15 @@ class Coordinator:
     Coordinator for a 2 Phase Commit
     """
 
-    def __init__(self, number_of_cohorts):
+    def __init__(self, number_of_cohorts, test_name):
         """Constructor"""
         self.cohorts = range(number_of_cohorts)
         self.protocol_DB = ProtocolDB()
         self.prepare_timeout_info = dict()
         self.timeout_transaction_info = dict()
         self.recovery_thread = RecoveryThread(self.protocol_DB, self.prepare_timeout_info, self.timeout_transaction_info)
-        self.coordinator_test_handler = CoordinatorTestHandler()
-        self.test_name = None
+        self.coordinator_test_handler = CoordinatorTestHandler(test_name)
+        self.test_name = test_name
 
     def start(self):
         # set the rabbitmq connection parameters and create a blocking connection (on localhost)
@@ -69,10 +69,6 @@ class Coordinator:
         mq_recieve_thread = threading.Thread(target=self.initialize_listener)
         mq_recieve_thread.start()
         self.generate_transactions_from_file()
-
-    def set_test_name(self, test_name):
-        self.test_name = test_name
-        self.coordinator_test_handler.set_test_name(test_name)
 
     def initialize_listener(self):
         parameters = pika.ConnectionParameters(heartbeat=0)
@@ -241,12 +237,15 @@ class Coordinator:
 
 if __name__ == "__main__":
     NUMBER_OF_COHORTS = 1
-    myopts, args = getopt.getopt(sys.argv[1:], "n:")
+    TEST_NAME = ""
+    myopts, args = getopt.getopt(sys.argv[1:], "n:t:")
 
     for opt, arg in myopts:
         if opt == '-n':
             NUMBER_OF_COHORTS = int(arg)
+        if opt == '-t':
+            TEST_NAME = str(arg)
 
-    COORDINATOR = Coordinator(NUMBER_OF_COHORTS)
+    COORDINATOR = Coordinator(NUMBER_OF_COHORTS, TEST_NAME)
     COORDINATOR.start()
     COORDINATOR.run()

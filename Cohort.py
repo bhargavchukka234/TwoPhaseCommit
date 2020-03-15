@@ -15,9 +15,9 @@ from constants import *
 # cursor = dbConnection.cursor()
 class Cohort:
 
-    METADATA = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/data/low_concurrency/metadata.sql"
-    CREATE = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/create.sql"
-    DROP = "/Users/bhargav/Documents/winter2020/cs223_PM_DDM/project/project1/schema/drop.sql"
+    METADATA = "./metadata.sql"
+    CREATE = "./create.sql"
+    DROP = "./drop.sql"
 
     # This is to indicate that a transaction did not succeed before PREPARE was run
     def startTransaction(self, transaction_id):

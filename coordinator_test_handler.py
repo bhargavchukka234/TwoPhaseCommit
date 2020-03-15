@@ -4,10 +4,9 @@ from constants import PREPARED_TIMEOUT,COMMIT_ACK_TIMEOUT
 
 class CoordinatorTestHandler:
 
-    test_name = None
     delay_induced = False
 
-    def set_test_name(self, test_name):
+    def __init__(self, test_name):
         self.test_name = test_name
 
     def handle_case1(self):
