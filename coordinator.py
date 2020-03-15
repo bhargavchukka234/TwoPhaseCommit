@@ -30,6 +30,7 @@ class Coordinator:
         self.timeout_transaction_info = dict()
         self.recovery_thread = RecoveryThread(self.protocol_DB, self.prepare_timeout_info, self.timeout_transaction_info)
         self.coordinator_test_handler = CoordinatorTestHandler()
+        self.test_name = None
 
     def start(self):
         # set the rabbitmq connection parameters and create a blocking connection (on localhost)
@@ -42,7 +43,7 @@ class Coordinator:
         # start the recovery thread
         self.recovery_thread.start()
 
-    def stop():
+    def stop(self):
         self.recovery_thread.stop()
         self.consumer_channel.stop_consuming()
         self.protocol_DB.reset()

@@ -1,3 +1,5 @@
+import sys
+
 import transaction_log_utils
 from constants import *
 from threading import Thread
@@ -14,6 +16,9 @@ class RecoveryThread(Thread):
    
     def set_channel(self, channel):
         self.channel = channel
+
+    def stop(self):
+        sys.exit(0)
 
     def run(self):
 
