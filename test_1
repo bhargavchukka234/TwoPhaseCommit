@@ -1,16 +1,16 @@
-#!/usr/bin/bash
-
+#!/bin/bash
+rm -r test1
 mkdir -p test1
 
-python3 coordinator.py 3 "test1" >> test1/coordinator.log &
+python3 coordinator.py -n 3 -t "test1" >> test1/coordinator.log 2>&1 &
 echo "Started coordinator"
-python3 Cohort.py -p 5433 -q 0 -c >> test1/cohort1.log &
+python3 Cohort.py -p 5433 -q 0 -c >> test1/cohort1.log 2>&1 &
 echo "Started cohort1"
-python3 Cohort.py -p 5434 -q 1 -c >> test1/cohort2.log &
+python3 Cohort.py -p 5434 -q 1 -c >> test1/cohort2.log 2>&1 &
 echo "Started cohort2"
-python3 Cohort.py -p 5435 -q 2 -c >> test1/cohort3.log &
+python3 Cohort.py -p 5435 -q 2 -c >> test1/cohort3.log 2>&1 &
 echo "Started cohort3"
-python3 coordinator.py 3 "test1" >> test1/coordinator.log &
 sleep 15
 python3 database_state_verifier.py
 echo "Test complete. Please check the logs under the 'test1' directory"
+kill -- -$$
