@@ -1,5 +1,7 @@
 import getopt
+import os
 import sys
+import hashlib
 
 from communication_utils import sendMessageToCohort
 from recovery import RecoveryThread
@@ -134,7 +136,8 @@ class Coordinator:
             timestamp = temp[0]
             sensor_id = temp[1]
             insert_statement = temp[2]
-            hash_value = hash((timestamp, sensor_id)) % len(self.cohorts)
+            h = hashlib.md5(str.encode(str(timestamp) + str(sensor_id))).hexdigest()
+            hash_value = int(h, 16) % len(self.cohorts)
             if prev_hash == -1:
                 prev_hash = hash_value
                 curr_insert_list.append(insert_statement)
@@ -179,6 +182,7 @@ class Coordinator:
                 transaction = self.protocol_DB.transactions[transaction_id]
                 # Log to persistent storage
                 transaction_log_utils.insert_log(transaction)
+                # os._exit() # case 2: coordinator down before sending decision to cohorts
                 # send COMMIT/ABORT depending on the final decision of the cohorts
                 for cohort_name in transaction.cohorts:
                     sendMessageToCohort(channel, cohort_name, transaction.state,
