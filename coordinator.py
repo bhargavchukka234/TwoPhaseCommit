@@ -6,6 +6,7 @@ import hashlib
 from communication_utils import sendMessageToCohort
 from recovery import RecoveryThread
 from protocol_db import ProtocolDB
+from coordinator_test_handler import CoordinatorTestHandler
 from constants import *
 import transaction_log_utils
 import pika
@@ -21,16 +22,18 @@ class Coordinator:
     Coordinator for a 2 Phase Commit
     """
 
-    def __init__(self, number_of_cohorts):
+    def __init__(self, number_of_cohorts, test_name=""):
         """Constructor"""
         self.cohorts = range(number_of_cohorts)
         self.protocol_DB = ProtocolDB()
         self.prepare_timeout_info = dict()
         self.timeout_transaction_info = dict()
         self.recovery_thread = RecoveryThread(self.protocol_DB, self.prepare_timeout_info, self.timeout_transaction_info)
+        self.test_name = test_name
+        self.coordinator_test_handler = CoordinatorTestHandler(test_name)
 
     def start(self):
-        #rabbitMQConnection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+        # set the rabbitmq connection parameters and create a blocking connection (on localhost)
         parameters = pika.ConnectionParameters(heartbeat = 0)
         rabbitMQConnection = pika.BlockingConnection(parameters)
         # create one channel which can create multiple queues
@@ -116,13 +119,18 @@ class Coordinator:
         for cohort,current_insert_statements in cohort_insert_statements_in_group:
             sendMessageToCohort(self.channel, cohort, State.INITIATED, transaction.id,
                                 current_insert_statements)
+        self.send_prepare_to_cohorts(transaction, cohorts)
+
+    def send_prepare_to_cohorts(self, transaction, cohorts):
         # send out prepare message to each cohort
         for cohort in cohorts:
             sendMessageToCohort(self.channel, cohort, State.PREPARE, transaction.id)
-
+        # add the transaction to the PREPARED timeout list monitored by the recovery thread
         self.prepare_timeout_info[transaction.id] = PREPARED_TIMEOUT
-
-        #print(self.protocol_DB.transactions)
+        # Handle Case 1:
+        # Scenario: Coordinator timed out waiting for vote from cohorts
+        # Expected result: Coordinator should abort the transaction and send abort to all cohorts after the timeout
+        self.coordinator_test_handler.handle_case1()
 
     # create transaction object and cohort to its insert statements mapping
     def generate_transaction(self, insert_records_batch):
@@ -178,17 +186,25 @@ class Coordinator:
             # check if all cohorts have responded to prepare
             if self.protocol_DB.get_transaction_status(transaction_id) == State.INITIATED and \
                     self.protocol_DB.check_all_cohorts_responded_to_prepare(transaction_id):
-                self.protocol_DB.compute_decision(transaction_id)
                 transaction = self.protocol_DB.transactions[transaction_id]
+                # Compute the collective decision of the cohorts
+                self.protocol_DB.compute_decision(transaction_id)
                 # Log to persistent storage
                 transaction_log_utils.insert_log(transaction)
-                # os._exit() # case 2: coordinator down before sending decision to cohorts
+                # Handle Case 2:
+                # Scenario: Coordinator goes down after it writes decision to transaction logs.
+                # Expected result: Coordinator should come back up and send the decision to all the cohorts
+                self.coordinator_test_handler.handle_case2()
                 # send COMMIT/ABORT depending on the final decision of the cohorts
                 for cohort_name in transaction.cohorts:
                     sendMessageToCohort(channel, cohort_name, transaction.state,
                                         transaction_id)
                 # add this transaction to the timer monitor list for recovery
                 self.timeout_transaction_info[transaction_id] = COMMIT_ACK_TIMEOUT
+                # Handle Case 3:
+                # Scenario: Coordinator times out while waiting for ACKs from all the cohorts
+                # Expected result: Coordinator sends the decision to all the cohorts after the timeout
+                self.coordinator_test_handler.handle_case3and4()
                 print("=================================")
                 if transaction_id in self.prepare_timeout_info.keys():
                     del self.prepare_timeout_info[transaction_id]
@@ -216,6 +232,6 @@ if __name__ == "__main__":
         if opt == '-n':
             NUMBER_OF_COHORTS = int(arg)
 
-    COORDINATOR = Coordinator(NUMBER_OF_COHORTS)
+    COORDINATOR = Coordinator(NUMBER_OF_COHORTS, test_name)
     COORDINATOR.start()
     COORDINATOR.run()
