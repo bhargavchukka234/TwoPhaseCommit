@@ -1,12 +1,12 @@
 from enum import IntEnum
 # coordinate configurations
-PREPARED_TIMEOUT = 10
-COMMIT_ACK_TIMEOUT = 10
+PREPARED_TIMEOUT = 6
+COMMIT_ACK_TIMEOUT = 6
 TRANSACTION_SIZE = 100
 ACTIVE_TRANSACTIONS_LIMIT = 1
 
 # cohort configurations
-DECISION_TIMEOUT = 5
+DECISION_TIMEOUT = 6
 
 # insert data file name
 INSERT_DATA_FILE_NAME = "testData.txt"

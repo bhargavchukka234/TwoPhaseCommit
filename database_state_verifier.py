@@ -50,11 +50,20 @@ class DatabaseStateVerifier:
 
         return record_count == count
 
+    def close_connections(self):
+        self.coordinator_db_connection.close()
+        for cohort_db_connection in self.cohort_db_connections:
+            cohort_db_connection.close()
+
     def is_aborted(self):
-        return self.check_insert_count_in_all_dbs(0)
+        result = self.check_insert_count_in_all_dbs(0)
+        self.close_connections()
+        return result
 
     def is_committed(self,count):
-        return self.check_insert_count_in_all_dbs(count)
+        result = self.check_insert_count_in_all_dbs(100)
+        self.close_connections()
+        return result
 
 
 if __name__ == "__main__":

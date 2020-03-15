@@ -240,15 +240,22 @@ class Cohort:
 
         self.initializeRecoveryThread(cohortId)
 
+    def stop(self):
+        self.cohort_recovery.set_stop()
+        self.channel.stop_consuming()
+        self.postgreSQL_pool.closeall()
+        self.transaction_connection = {}
+        self.decision_timeout_transaction_info = {}
+
     def run(self):
         parameters = pika.ConnectionParameters(heartbeat=0)
         rabbitMQConnection = pika.BlockingConnection(parameters)
-        channel = rabbitMQConnection.channel()
+        self.channel = rabbitMQConnection.channel()
         # listen on the queue created by the coordinator
-        channel.basic_consume(queue='queue' + str(self.cohortId),
+        self.channel.basic_consume(queue='queue' + str(self.cohortId),
                               auto_ack=True,
                               on_message_callback=self.callback)
-        channel.start_consuming()
+        self.channel.start_consuming()
 
 
 # there should be aleast one argument to give sender(cohort_id)

@@ -8,14 +8,19 @@ class CohortRecoveryThread(Thread):
 
     def __init__(self, channel, sender, decision_timeout_transaction_info):
         Thread.__init__(self)
+
+        self.stop = False
         self.channel = channel
         self.sender = sender
         # self.prepare_timeout_info = prepare_timeout_info
         self.decision_timeout_transaction_info = decision_timeout_transaction_info
 
+    def set_stop(self):
+        self.stop = True
+
     def run(self):
 
-        while True:
+        while not self.stop:
 
             # resend state request if decision not received
             self.check_decision_timeout()

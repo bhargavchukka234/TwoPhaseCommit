@@ -44,7 +44,7 @@ class Coordinator:
         self.recovery_thread.start()
 
     def stop(self):
-        self.recovery_thread.stop()
+        self.recovery_thread.set_stop()
         self.consumer_channel.stop_consuming()
         self.protocol_DB.reset()
         self.prepare_timeout_info = {}
@@ -138,10 +138,6 @@ class Coordinator:
             sendMessageToCohort(self.channel, cohort, State.PREPARE, transaction.id)
         # add the transaction to the PREPARED timeout list monitored by the recovery thread
         self.prepare_timeout_info[transaction.id] = PREPARED_TIMEOUT
-        # Handle Case 1:
-        # Scenario: Coordinator timed out waiting for vote from cohorts
-        # Expected result: Coordinator should abort the transaction and send abort to all cohorts after the timeout
-        self.coordinator_test_handler.handle_case1()
 
     # create transaction object and cohort to its insert statements mapping
     def generate_transaction(self, insert_records_batch):
@@ -194,6 +190,12 @@ class Coordinator:
             return
 
         elif (state == State.PREPARED or state == State.ABORT):
+
+            # Handle Case 1:
+            # Scenario: Coordinator timed out waiting for vote from cohorts
+            # Expected result: Coordinator should abort the transaction and send abort to all cohorts after the timeout
+            self.coordinator_test_handler.handle_case1()
+
             # mark the receipt of this PREPARED message in the protocol DB for the particular cohort
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
             # check if all cohorts have responded to prepare

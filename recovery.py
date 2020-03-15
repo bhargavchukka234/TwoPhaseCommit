@@ -10,6 +10,8 @@ class RecoveryThread(Thread):
 
     def __init__(self, protocol_DB, prepare_timeout_info, timeout_transaction_info):
         Thread.__init__(self)
+
+        self.stop = False
         self.protocol_DB = protocol_DB
         self.prepare_timeout_info = prepare_timeout_info
         self.timeout_transaction_info = timeout_transaction_info
@@ -17,12 +19,12 @@ class RecoveryThread(Thread):
     def set_channel(self, channel):
         self.channel = channel
 
-    def stop(self):
-        sys.exit(0)
+    def set_stop(self):
+        self.stop = True
 
     def run(self):
 
-        while True:
+        while not self.stop:
 
             prepare_timed_out_transactions = self.check_prepare_timeout()
             ack_completed_transactions = self.check_ack_timeout()

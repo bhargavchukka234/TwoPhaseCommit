@@ -47,3 +47,7 @@ def get_pending_transactions():
         transaction.cohorts = json.loads(record[2])
         transactions[transaction.id] = transaction
     return transactions
+
+def clear_db():
+    cursor.execute("DELETE FROM transaction_log;")
+    cursor.execute("DELETE FROM line_number;")

@@ -7,6 +7,9 @@ class ProtocolDB:
         self.transactions = dict()
         self.transactions_limit = ACTIVE_TRANSACTIONS_LIMIT
 
+    def reset(self):
+        self.transactions = {}
+
     def add_transaction(self, transaction, cohorts):
         self.transactions[transaction.id] = transaction
         self.transactions[transaction.id].set_cohort_list(cohorts)

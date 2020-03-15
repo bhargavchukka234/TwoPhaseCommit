@@ -6,15 +6,12 @@ def sendMessageToCohort(channel, processNumber, state, transaction_id, insert_st
     queueName = "queue" + str(processNumber)
     messageBody = ""
     if (state == State.INITIATED):
-        count = 0
         if (insert_statements_list == None):
             return
 
         for line in insert_statements_list:
-            if (count <= 10):
                 if (line.__contains__("INSERT")):
                     messageBody = messageBody + line.rstrip()
-                    count += 1
         message = {"sender": processNumber, "id": transaction_id, "state": int(state), "messageBody": messageBody}
         jsonMessage = json.dumps(message)
         print("Sending statements of transaction : " + transaction_id + " to the cohort "+str(processNumber))
