@@ -9,9 +9,12 @@ class DatabaseStateVerifier:
 
     def __init__(self,coordinator_port, cohort_ports):
         self.coordinator_db_connection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1", port=coordinator_port)
+        self.coordinator_db_connection.autocommit = True
         self.cohort_db_connections = []
+        self.connection_map = {}
         for cohort_port in cohort_ports:
             cohort_connection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1", port=cohort_port)
+            self.coordinator_db_connection.autocommit = True
             self.cohort_db_connections.append(cohort_connection)
             self.connection_map[cohort_connection] = cohort_port
 
@@ -63,19 +66,24 @@ class DatabaseStateVerifier:
 
     def is_aborted(self):
         result = self.check_insert_count_in_all_dbs(0)
-        self.close_connections()
         return result
 
     def is_committed(self,count):
         result = self.check_insert_count_in_all_dbs(100)
-        self.close_connections()
         return result
 
+    def delete_log_info(self):
+        cursor = self.coordinator_db_connection.cursor()
+        cursor.execute("DELETE FROM TRANSACTION_LOG;")
+        cursor.execute("DELETE FROM LINE_NUMBER;")
 
 if __name__ == "__main__":
     databaseStateVerifier = DatabaseStateVerifier(5431, [5433,5434,5435])
     if databaseStateVerifier.is_aborted():
         print("Verified that the transaction was aborted")
     elif databaseStateVerifier.is_committed(100):
+        print("Verified that the transaction was committed")
+    databaseStateVerifier.delete_log_info()
+    databaseStateVerifier.close_connections()
 
 

@@ -8,6 +8,7 @@ import json
 import sys
 
 from cohort_recovery import CohortRecoveryThread
+from cohort_test_handler import CohortTestHandler
 from constants import *
 
 # create a connection the database
@@ -38,7 +39,6 @@ class Cohort:
     def executeStatements(self, transaction_id, transactionMessage):
         ps_connection = self.transaction_connection.get(transaction_id)
         if ps_connection is None or ps_connection == "":
-            print("no connection found ")
             return -1
         cursor = ps_connection.cursor()
         Lines = transactionMessage.split(';')
@@ -104,6 +104,8 @@ class Cohort:
             elif transaction_id in self.transaction_connection:
                 self.executeStatements(transaction_id, transactionMessage)
         elif state == State.PREPARE:
+            # In test case 6 simulation, cohort restarts before processing prepared transaction. Transaction should be aborted
+            self.cohort_test_handler.handle_case6()
             print("received a prepare message from the coordinator for transaction " + str(transaction_id))
             if self.transaction_connection.get(transaction_id) is None:
                 ''' The transaction has already been rolled back 
@@ -116,18 +118,37 @@ class Cohort:
             else:
                 ''' Prepare the transaction for commit '''
                 ret_state = self.prepareTransaction(transaction_id)
+            if self.test_name == "test8":
+                ret_state = State.ABORT
+            self.cohort_test_handler.handle_case10()
             self.sendMessageToCoordinator(channel, sender, transaction_id, ret_state)
 
         elif state == State.COMMIT:
+            # In test case 7 simulation, cohort restarts before processing commit transaction.
+            # Transaction should be committed when cohort is up
+            self.cohort_test_handler.handle_case7_8()
             print("received a commit message from the coordinator for transaction " + str(transaction_id))
             if transaction_id in self.transaction_connection:
                 self.commitTransaction(str(transaction_id))
+
+            # In test cases 10 simulation, cohort restarts before sending ack to coordinator.
+            # Cohort should respond with ack when up
+            self.cohort_test_handler.handle_case9()
             self.sendMessageToCoordinator(channel, sender, transaction_id, State.ACK)
         elif state == State.ABORT:
+
+            # In test case 8 simulation, cohort restarts before processing commit transaction.
+            # Transaction should be aborted when cohort is up
+            self.cohort_test_handler.handle_case7_8()
             print("received an abort message from the coordinator " + str(transaction_id))
             if transaction_id in self.transaction_connection:
                 self.abortTransaction(str(transaction_id))
+
             # coordinator expects ack from cohort for abort
+
+            # In test cases 9 simulation, cohort restarts before sending ack to coordinator.
+            # Cohort should respond with ack when up
+            self.cohort_test_handler.handle_case9()
             self.sendMessageToCoordinator(channel, sender, transaction_id, State.ACK)
 
 
@@ -222,7 +243,7 @@ class Cohort:
         self.cohort_recovery = CohortRecoveryThread(channel, sender, self.decision_timeout_transaction_info)
         self.cohort_recovery.start()
 
-    def __init__(self, cohortId, port, isCleanUp = False):
+    def __init__(self, cohortId, port, test_name, isCleanUp = False):
         self.cohortId = cohortId
         self.isCleanUp = isCleanUp
         self.postgreSQL_pool = psycopg2.pool.SimpleConnectionPool(1, 20, user="newuser",
@@ -230,6 +251,8 @@ class Cohort:
                                                          host="127.0.0.1",
                                                          port=str(port),
                                                          database="test")
+        self.test_name = test_name
+        self.cohort_test_handler = CohortTestHandler(self.test_name)
         self.transaction_connection = {}
         self.decision_timeout_transaction_info = {}
 
@@ -261,10 +284,11 @@ class Cohort:
 # there should be aleast one argument to give sender(cohort_id)
 if __name__ == "__main__":
 
-    myopts, args = getopt.getopt(sys.argv[1:], "cq:p:")
+    myopts, args = getopt.getopt(sys.argv[1:], "cq:p:t:")
     port = None
     cohortId = None
     isCleanUp = False
+    test_name = "test0"
 
     for opts, arg in myopts:
         if opts == '-c':
@@ -273,10 +297,12 @@ if __name__ == "__main__":
             port = arg
         elif opts == '-q':
             cohortId = int(arg)
+        elif opts == '-t':
+            test_name = str(arg)
 
     if cohortId is None or port is None:
         print("Port(-p) or queue Id(-q) not provided. Exiting ...")
         sys.exit(5)
 
-    cohort = Cohort(cohortId, port, isCleanUp)
+    cohort = Cohort(cohortId, port, test_name, isCleanUp)
     cohort.run()

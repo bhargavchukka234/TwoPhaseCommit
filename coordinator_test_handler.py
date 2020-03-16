@@ -23,11 +23,7 @@ class CoordinatorTestHandler:
             time.sleep(COMMIT_ACK_TIMEOUT + 2)
             self.delay_induced = True
 
-    def handle_case8(self):
-        if self.test_name == "test8":
-            os._exit(8)
-
-    def handle_case11(self):
-        if self.test_name == "test13":
+    def handle_case5(self):
+        if self.test_name == "test5":
             return True
         return False

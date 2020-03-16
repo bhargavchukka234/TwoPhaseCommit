@@ -1,6 +1,7 @@
 import time
 import os
-from constants import PREPARED_TIMEOUT,COMMIT_ACK_TIMEOUT
+from constants import PREPARED_TIMEOUT, COMMIT_ACK_TIMEOUT, DECISION_TIMEOUT
+
 
 class CohortTestHandler:
 
@@ -17,12 +18,16 @@ class CohortTestHandler:
         if self.test_name == "test6":
             os._exit(9)
 
-    def handle_case7(self):
-        if not self.delay_induced and self.test_name == "test7":
-            time.sleep()
+    def handle_case7_8(self):
+        if self.test_name == "test7" or self.test_name == "test8":
+            time.sleep(COMMIT_ACK_TIMEOUT + 2)
+
+    def handle_case9(self):
+        if self.test_name == "test9" or self.test_name == "test10":
+            time.sleep(COMMIT_ACK_TIMEOUT + 2)
             os._exit(9)
 
-    def handle_case3and4(self):
-        if not self.delay_induced and (self.test_name == "test3" or self.test_name == "test4"):
-            time.sleep(COMMIT_ACK_TIMEOUT + 2)
-            self.delay_induced = True
+    def handle_case10(self):
+        if self.test_name == "test11":
+            time.sleep(DECISION_TIMEOUT + 2)
+            os._exit(9)
