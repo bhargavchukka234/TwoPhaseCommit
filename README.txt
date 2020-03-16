@@ -12,11 +12,23 @@ Steps to install rabbitmq and connect from python
     localhost:15672 
 5. Install Python libraries for rabbitmq:
     pip3 install pika --upgrade
-    
 Steps to set up the PostgreSQL DBs
 
 1. pip3 install psycopg2
 2. Set up n PostgreSQL servers on different ports. Each server can be used for one cohort site.
+    - Initialize a database in a particular directory 
+        initdb -D /var/tmp/db1
+    - Start the DB instance 
+        Eg: pg_ctl -D /var/tmp/db1 -o “-p 5433” start
+    - Login to the psql commandline through a particular port and user 
+        Eg: psql -p 5433 postgres -U newuser
+    - Create a new user and password for the same. Mention the username and password in constants.py
+      This is the user and password used to connect to the DB at the coordinator and the cohort. 
+        Eg : create user ‘username’ with password ‘password’;
+             grant all privileges on database "test" to newuser;
+    - Create a new database for the new user. This is the database used to store information at the cohort and the coordinator(protocolDB)
+        Eg: create database “dbname”
+
 
 
 # table for coordinator transaction logs(server running on 5431 port)
