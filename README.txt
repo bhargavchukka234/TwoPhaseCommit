@@ -1,24 +1,23 @@
-#To install rabbitmq and connect from python
+Steps to install rabbitmq and connect from python
 
-Rabbitmq install:
-	brew install rabbitmq
-	
-Add rabbitmq path to environment variables:
-	export PATH=$PATH:/usr/local/opt/rabbitmq/sbin
-	
-Start server from terminal:
-	rabbitmq-server
-UI:
-	localhost:15672
-Python libraries for rabbitmq:
-	pip3 install pika --upgrade
-	
-# To pipe file for coordinator
+1. Rabbitmq install:
+    brew install rabbitmq (for mac)
+    yum install rabbitmq-server (for centos/RHEL)	
+2. Add rabbitmq path to environment variables:
+    export PATH=$PATH:/usr/local/opt/rabbitmq/sbin (for mac)	
+3. Start server from terminal:
+    rabbitmq-server (for mac)
+    service rabbitmq-server start (for centos/RHEL)	
+4. UI:
+    localhost:15672 
+5. Install Python libraries for rabbitmq:
+    pip3 install pika --upgrade
+    
+Steps to set up the PostgreSQL DBs
 
-#create pipe:
-	mkfifo pipe
-#move data to pipe:
-	cat testData.txt > pipe
+1. pip3 install psycopg2
+2. Set up n PostgreSQL servers on different ports. Each server can be used for one cohort site.
+
 
 # table for coordinator transaction logs(server running on 5431 port)
 CREATE TABLE transaction_log(id varchar(100) primary key, state varchar(100) not null, cohorts varchar);
