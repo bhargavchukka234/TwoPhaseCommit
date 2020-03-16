@@ -12,6 +12,7 @@ Steps to install rabbitmq and connect from python
     localhost:15672 
 5. Install Python libraries for rabbitmq:
     pip3 install pika --upgrade
+    
 Steps to set up the PostgreSQL DBs
 
 1. pip3 install psycopg2
@@ -24,8 +25,8 @@ Steps to set up the PostgreSQL DBs
         Eg: psql -p 5433 postgres -U newuser
     - Create a new user and password for the same. Mention the username and password in constants.py
       This is the user and password used to connect to the DB at the coordinator and the cohort. 
-        Eg : create user ‘username’ with password ‘password’;
-             grant all privileges on database "test" to newuser;
+        Eg : create user username with password ‘password’;
+             grant all privileges on database test to newuser;
     - Create a new database for the new user. This is the database used to store information at the cohort and the coordinator(protocolDB)
         Eg: create database “dbname”
 
@@ -33,6 +34,7 @@ Steps to set up the PostgreSQL DBs
 
 # table for coordinator transaction logs(server running on 5431 port)
 CREATE TABLE transaction_log(id varchar(100) primary key, state varchar(100) not null, cohorts varchar);
+CREATE TABLE line_number (file_name varchar(100) primary key, number int not null);
 
 # alter the max_prepared_connections variable: 
 1) Log into superuser and run : ALTER SYSTEM SET max_prepared_connections TO 100;
@@ -43,6 +45,12 @@ SELECT gid FROM pg_prepared_xacts WHERE database = current_database()
 
 
 TEST CASES AND HOW TO EXECUTE THEM :)
+
+Note:
+    1. Make sure that database name, username, password are same for all cohorts and coordinator. Provide the 
+       database details and ports of coordinator log database and all cohorts in constants.py file
+    2. Make sure to run database_state_verifier.py after each test case run
+    3. Please refrain from changing other constants in constants.py file for running test cases mentioned below
 
 Case 0: Scenario where the 2 Phase Commit is successful without timeouts or restarts
 Simulation steps:
@@ -75,7 +83,7 @@ Simulation steps:
 
 Case 3: Scenario where coordinator does not receive ACK for the COMMIT decision
 Simulation steps:
-1. tart all cohorts with the command “python3 cohort.py -p <postgres-port> -q <cohort-queue-id> -c”
+1. Start all cohorts with the command “python3 cohort.py -p <postgres-port> -q <cohort-queue-id> -c”
 2. Start the coordinator with the command “python3 coordinator.py -n <num-of-cohorts> -t test3”
 3. The following observations are expected:
    a. Coordinator times out waiting for ACK from cohorts.
