@@ -246,11 +246,11 @@ class Cohort:
     def __init__(self, cohortId, port, test_name, isCleanUp = False):
         self.cohortId = cohortId
         self.isCleanUp = isCleanUp
-        self.postgreSQL_pool = psycopg2.pool.SimpleConnectionPool(1, 20, user="newuser",
-                                                         password="password",
+        self.postgreSQL_pool = psycopg2.pool.SimpleConnectionPool(1, 20, user=USERNAME,
+                                                         password=PASSWORD,
                                                          host="127.0.0.1",
                                                          port=str(port),
-                                                         database="test")
+                                                         database=DATABASE)
         self.test_name = test_name
         self.cohort_test_handler = CohortTestHandler(self.test_name)
         self.transaction_connection = {}

@@ -5,8 +5,8 @@ import json
 from transaction import Transaction
 
 # create a connection the database
-dbConnection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1",
-                                port="5431")
+dbConnection = psycopg2.connect(database=DATABASE, user=USERNAME, password=PASSWORD, host="127.0.0.1",
+                                port=COORDINATOR_DB_PORT)
 dbConnection.autocommit = True
 cursor = dbConnection.cursor()
 

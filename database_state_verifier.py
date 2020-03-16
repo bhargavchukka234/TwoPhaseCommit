@@ -1,19 +1,18 @@
-import pika
-import time
-from enum import IntEnum
 import psycopg2
-import json
 
 # def checkAbort(connection )
+from constants import COORDINATOR_DB_PORT, COHORT_DB_PORTS_LIST, DATABASE, USERNAME, PASSWORD
+
+
 class DatabaseStateVerifier:
 
     def __init__(self,coordinator_port, cohort_ports):
-        self.coordinator_db_connection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1", port=coordinator_port)
+        self.coordinator_db_connection = psycopg2.connect(database=DATABASE, user=USERNAME, password=PASSWORD, host="127.0.0.1", port=coordinator_port)
         self.coordinator_db_connection.autocommit = True
         self.cohort_db_connections = []
         self.connection_map = {}
         for cohort_port in cohort_ports:
-            cohort_connection = psycopg2.connect(database="test", user="newuser", password="password", host="127.0.0.1", port=cohort_port)
+            cohort_connection = psycopg2.connect(database=DATABASE, user=USERNAME, password=PASSWORD, host="127.0.0.1", port=cohort_port)
             self.coordinator_db_connection.autocommit = True
             self.cohort_db_connections.append(cohort_connection)
             self.connection_map[cohort_connection] = cohort_port
@@ -78,7 +77,7 @@ class DatabaseStateVerifier:
         cursor.execute("DELETE FROM LINE_NUMBER;")
 
 if __name__ == "__main__":
-    databaseStateVerifier = DatabaseStateVerifier(5431, [5433,5434,5435])
+    databaseStateVerifier = DatabaseStateVerifier(COORDINATOR_DB_PORT, COHORT_DB_PORTS_LIST)
     if databaseStateVerifier.is_aborted():
         print("Verified that the transaction was aborted")
     elif databaseStateVerifier.is_committed(100):
