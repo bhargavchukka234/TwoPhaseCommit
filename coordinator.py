@@ -124,6 +124,8 @@ class Coordinator:
         self.protocol_DB.add_transaction(transaction, cohorts)
         # send out the insert statements in batch to cohorts
         for cohort,current_insert_statements in cohort_insert_statements_in_group:
+            if (self.coordinator_test_handler.handle_case11()):
+                current_insert_statements += "invalid random string"
             sendMessageToCohort(self.channel, cohort, State.INITIATED, transaction.id,
                                 current_insert_statements)
         self.send_prepare_to_cohorts(transaction, cohorts)
@@ -191,6 +193,7 @@ class Coordinator:
             # Scenario: Coordinator timed out waiting for vote from cohorts
             # Expected result: Coordinator should abort the transaction and send abort to all cohorts after the timeout
             self.coordinator_test_handler.handle_case1()
+            self.coordinator_test_handler.handle_case8()
 
             # mark the receipt of this PREPARED message in the protocol DB for the particular cohort
             self.protocol_DB.set_cohort_decision(transaction_id, cohort, state)
